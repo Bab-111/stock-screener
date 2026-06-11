@@ -1,31 +1,18 @@
-name: Daily Stock Screener
+from datetime import datetime
+import os
 
-on:
-  schedule:
-    - cron: "0 13 * * 1-5"   # every weekday at 9:00 UTC
-  workflow_dispatch:          # manual trigger
+os.makedirs("output", exist_ok=True)
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+html = f"""
+<!DOCTYPE html>
+<html>
+<head><title>Test Screener</title></head>
+<body>
+  <h1>Hello Babak!</h1>
+  <p>This is a test run at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}.</p>
+</body>
+</html>
+"""
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
-      - name: Install dependencies
-        run: |
-          pip install yfinance matplotlib pandas
-
-      - name: Run screener
-        run: python scripts/daily_report.py
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./output
+with open("output/index.html", "w") as f:
+    f.write(html)
