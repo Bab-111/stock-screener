@@ -34,11 +34,12 @@ def main():
             latest = data.iloc[-1]
             ma200 = data['Close'].rolling(config["ma_period"]).mean().iloc[-1]
 
-            volume_spike = latest['Volume'] >= config["volume_spike_threshold"] * avg_vol
-            breakout = check_breakout(latest, config["breakout_threshold"])
-            above_ma200 = latest['Close'] > ma200
+            # Explicitly cast to bool → int
+            volume_spike = bool(latest['Volume'] >= config["volume_spike_threshold"] * avg_vol)
+            breakout = bool(check_breakout(latest, config["breakout_threshold"]))
+            above_ma200 = bool(latest['Close'] > ma200)
 
-            score = sum([volume_spike, breakout, above_ma200])
+            score = int(volume_spike) + int(breakout) + int(above_ma200)
 
             results.append((symbol, score, volume_spike, breakout, above_ma200))
         except Exception as e:
