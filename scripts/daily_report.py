@@ -1,74 +1,25 @@
-import json
-import pandas as pd
 import yfinance as yf
-import matplotlib.pyplot as plt
-from datetime import datetime
 import os
 
-# Ensure output folder exists
+# Make sure output folder exists
 os.makedirs("output", exist_ok=True)
 
-# Load config
-with open("config/config.json") as f:
-    config = json.load(f)
+# Small universe of tickers
+symbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"]
 
-# Load universe
-symbols = pd.read_csv(f"config/{config['universe']}")["Symbol"].tolist()
+html = "<h1>Latest Prices</h1><ul>"
 
-def check_breakout(latest, breakout_threshold):
-    return latest['Close'] > latest['Open'] * breakout_threshold
+for symbol in symbols:
+    try:
+        data = yf.download(symbol, period="1d", interval="1d")
+        latest_close = float(data["Close"].iloc[-1])
+        html += f"<li>{symbol}: {latest_close}</li>"
+    except Exception as e:
+        html += f"<li>{symbol}: Error ({e})</li>"
 
-def generate_sector_chart():
-    sectors = ["Tech", "Healthcare", "Industrials"]
-    perf = [1.8, 1.2, 0.9]
-    plt.bar(sectors, perf, color=["#4caf50", "#2196f3", "#ff9800"])
-    plt.title("Sector Rotation (Past Week)")
-    plt.savefig("output/sector_rotation.png")
+html += "</ul>"
 
-def main():
-    results = []
-    for symbol in symbols:
-        try:
-            data = yf.download(symbol, period="6mo", interval="1d")
-            avg_vol = data['Volume'].mean()
-            latest = data.iloc[-1]
-            ma200 = data['Close'].rolling(config["ma_period"]).mean().iloc[-1]
+with open("output/index.html", "w") as f:
+    f.write(html)
 
-            # Explicitly cast to bool → int
-            volume_spike = bool(latest['Volume'] >= config["volume_spike_threshold"] * avg_vol)
-            breakout = bool(check_breakout(latest, config["breakout_threshold"]))
-            above_ma200 = bool(latest['Close'] > ma200)
-
-            score = int(volume_spike) + int(breakout) + int(above_ma200)
-
-            results.append((symbol, score, volume_spike, breakout, above_ma200))
-        except Exception as e:
-            print(f"Error processing {symbol}: {e}")
-
-    # Generate HTML report
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head><title>Daily Stock Screener</title></head>
-    <body>
-      <h1>Top Conviction Picks – {datetime.now().strftime("%Y-%m-%d")}</h1>
-      <ol>
-    """
-    results.sort(key=lambda x: x[1], reverse=True)
-    for symbol, score, vol, brk, ma in results[:10]:
-        html += f"<li>{symbol} – Score {score}/3 (Vol={vol}, Breakout={brk}, MA200={ma})</li>"
-    html += """
-      </ol>
-      <h2>Sector Rotation (Past Week)</h2>
-      <img src="sector_rotation.png" width="600">
-    </body>
-    </html>
-    """
-
-    with open("output/index.html", "w") as f:
-        f.write(html)
-
-    generate_sector_chart()
-
-if __name__ == "__main__":
-    main()
+print("Generated report with", len(symbols), "stocks")
