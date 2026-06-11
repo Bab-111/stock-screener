@@ -1,1 +1,31 @@
+name: Daily Stock Screener
 
+on:
+  schedule:
+    - cron: "0 13 * * 1-5"   # every weekday at 9:00 UTC
+  workflow_dispatch:          # manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install yfinance matplotlib pandas
+
+      - name: Run screener
+        run: python scripts/daily_report.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./output
