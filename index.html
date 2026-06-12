@@ -1,1 +1,115 @@
-<h1>Latest Prices</h1><ul><li>AAPL: 290.3800048828125</li><li>MSFT: 389.42010498046875</li><li>NVDA: 202.07000732421875</li><li>GOOGL: 347.30999755859375</li><li>AMZN: 236.6999969482422</li></ul>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Breakout Screener – 2026-06-12 02:29</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f6fa;
+           margin: 0; padding: 16px; color: #222; }
+    h1   { font-size: 22px; margin: 0 0 4px; color: #1a237e; }
+    h2   { font-size: 16px; margin: 24px 0 10px; color: #283593; border-bottom: 2px solid #3949ab;
+           padding-bottom: 4px; }
+    .header { background: #1a237e; color: #fff; padding: 14px 20px;
+              border-radius: 8px; margin-bottom: 18px; }
+    .run-time { font-size: 12px; color: #b0bec5; margin-top: 4px; }
+    .sentiment-bar { background: #fff; border-radius: 8px; padding: 14px 18px;
+                     margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .bar-wrap { display: flex; height: 22px; border-radius: 6px; overflow: hidden;
+                margin: 8px 0; }
+    .bar-seg  { height: 100%; transition: width 0.3s; }
+    .legend   { font-size: 12px; color: #555; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; background: #fff;
+            border-radius: 8px; overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07); font-size: 12px; }
+    th { background: #1a237e; color: #fff; padding: 9px 8px;
+         text-align: center; font-size: 11px; }
+    td { padding: 8px; text-align: center; border-bottom: 1px solid #eeeeee; }
+    tr:last-child td { border-bottom: none; }
+    img { max-width: 100%; border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,0.1); }
+    .two-col { display: flex; gap: 18px; flex-wrap: wrap; }
+    .two-col > div { flex: 1; min-width: 260px; }
+    .sector-table { background: #fff; border-radius: 8px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .sector-table th { background: #283593; }
+    .disclaimer { font-size: 11px; color: #888; margin-top: 20px;
+                  border-top: 1px solid #ddd; padding-top: 10px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📈 Stock Breakout Screener Dashboard</h1>
+  <div class="run-time">Last updated: 2026-06-12 02:29 UTC &nbsp;|&nbsp;
+    Top 5 picks from 0 qualifying stocks &nbsp;|&nbsp;
+    Universe: large-cap ≥ $5B market cap</div>
+</div>
+
+<!-- Sentiment Bar -->
+<div class="sentiment-bar">
+  <strong>Overall Market Sentiment: 🐻 Bearish</strong>
+  <div class="bar-wrap">
+    <div class="bar-seg" style="width:0%;background:#4caf50;"></div>
+    <div class="bar-seg" style="width:0%;background:#ffeb3b;"></div>
+    <div class="bar-seg" style="width:0%;background:#f44336;"></div>
+  </div>
+  <div class="legend">
+    🟢 Strong 0% &nbsp;&nbsp;
+    🟡 Moderate 0% &nbsp;&nbsp;
+    🔴 Weak 0%
+  </div>
+</div>
+
+<!-- Top 5 Picks -->
+<h2>🏆 Top 5 Conviction Picks</h2>
+
+
+<!-- Detailed Table -->
+<h2>📊 Detailed Conviction Dashboard</h2>
+<div style="overflow-x:auto;">
+<table>
+  <tr>
+    <th>Stock</th>
+    <th>Volume (w:2)</th>
+    <th>Breakout (w:2)</th>
+    <th>MA200 (w:2)</th>
+    <th>Inst. Own (w:3)</th>
+    <th>MFI (w:2)</th>
+    <th>Sector (w:3)</th>
+    <th>IV (w:1)</th>
+    <th>History (w:2)</th>
+    <th>Score /17</th>
+  </tr>
+  
+</table>
+</div>
+
+<!-- Factor Chart -->
+<h2>🎯 Factor Contribution Chart</h2>
+<img src="score_chart.png" alt="Score breakdown by factor">
+
+<!-- Sector + Rotation -->
+<div class="two-col" style="margin-top:24px;">
+  <div>
+    <h2>🌀 Sector Rotation</h2>
+    <img src="sector_rotation.png" alt="Sector rotation chart">
+  </div>
+  <div>
+    <h2>📋 Sector Ranking Today</h2>
+    <table class="sector-table">
+      <tr><th>Sector</th><th>Daily Change</th></tr>
+      
+    </table>
+  </div>
+</div>
+
+<div class="disclaimer">
+  ⚠️ This report is for informational purposes only and does not constitute financial advice.
+  Always do your own research before making investment decisions.
+  Scoring weights: Institutional Ownership (3) · Sector Alignment (3) ·
+  Volume Spike (2) · Breakout Candle (2) · MA200 (2) · MFI (2) · History (2) · IV (1).
+</div>
+
+</body>
+</html>
