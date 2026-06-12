@@ -2,113 +2,312 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Breakout Screener – 2026-06-12 02:50</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Stock Breakout Screener</title>
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f6fa;
-           margin: 0; padding: 16px; color: #222; }
-    h1   { font-size: 22px; margin: 0 0 4px; color: #1a237e; }
-    h2   { font-size: 16px; margin: 24px 0 10px; color: #283593; border-bottom: 2px solid #3949ab;
-           padding-bottom: 4px; }
-    .header { background: #1a237e; color: #fff; padding: 14px 20px;
-              border-radius: 8px; margin-bottom: 18px; }
-    .run-time { font-size: 12px; color: #b0bec5; margin-top: 4px; }
-    .sentiment-bar { background: #fff; border-radius: 8px; padding: 14px 18px;
-                     margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .bar-wrap { display: flex; height: 22px; border-radius: 6px; overflow: hidden;
-                margin: 8px 0; }
-    .bar-seg  { height: 100%; transition: width 0.3s; }
-    .legend   { font-size: 12px; color: #555; margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; background: #fff;
-            border-radius: 8px; overflow: hidden;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.07); font-size: 12px; }
-    th { background: #1a237e; color: #fff; padding: 9px 8px;
-         text-align: center; font-size: 11px; }
-    td { padding: 8px; text-align: center; border-bottom: 1px solid #eeeeee; }
-    tr:last-child td { border-bottom: none; }
-    img { max-width: 100%; border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,0.1); }
-    .two-col { display: flex; gap: 18px; flex-wrap: wrap; }
-    .two-col > div { flex: 1; min-width: 260px; }
-    .sector-table { background: #fff; border-radius: 8px;
-                    box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .sector-table th { background: #283593; }
-    .disclaimer { font-size: 11px; color: #888; margin-top: 20px;
-                  border-top: 1px solid #ddd; padding-top: 10px; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;padding:14px;color:#222;}
+    h2{font-size:15px;font-weight:700;color:#283593;border-bottom:2px solid #3949ab;
+        padding-bottom:5px;margin:22px 0 12px;}
+    .hdr{background:linear-gradient(135deg,#1a237e,#283593);color:#fff;
+          padding:16px 20px;border-radius:10px;margin-bottom:16px;}
+    .hdr h1{font-size:20px;margin-bottom:4px;}
+    .hdr p{font-size:12px;color:#b0bec5;}
+    .card{background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:14px;
+           box-shadow:0 1px 5px rgba(0,0,0,0.08);}
+    .bar-wrap{display:flex;height:24px;border-radius:6px;overflow:hidden;margin:8px 0;}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;
+           overflow:hidden;box-shadow:0 1px 5px rgba(0,0,0,0.08);font-size:12px;}
+    th{background:#1a237e;color:#fff;padding:9px 8px;text-align:center;font-size:11px;}
+    td{padding:7px 8px;text-align:center;border-bottom:1px solid #f0f0f0;}
+    tr:last-child td{border-bottom:none;}
+    img{max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+    .two-col{display:flex;gap:16px;flex-wrap:wrap;}
+    .two-col>div{flex:1;min-width:260px;}
+    .note{font-size:11px;color:#888;margin-top:18px;border-top:1px solid #ddd;padding-top:10px;}
   </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>📈 Stock Breakout Screener Dashboard</h1>
-  <div class="run-time">Last updated: 2026-06-12 02:50 UTC &nbsp;|&nbsp;
-    Top 5 picks from 0 qualifying stocks &nbsp;|&nbsp;
-    Universe: large-cap ≥ $5B market cap</div>
+<div class="hdr">
+  <h1>📈 Stock Breakout Screener</h1>
+  <p>Updated: 2026-06-12 07:21 UTC &nbsp;·&nbsp;
+     Screened 129 stocks &nbsp;·&nbsp;
+     5 scored &nbsp;·&nbsp;
+     Top 5 shown &nbsp;·&nbsp;
+     Large-cap ≥ $5B only</p>
 </div>
 
-<!-- Sentiment Bar -->
-<div class="sentiment-bar">
-  <strong>Overall Market Sentiment: 🐻 Bearish</strong>
-  <div class="bar-wrap">
-    <div class="bar-seg" style="width:0%;background:#4caf50;"></div>
-    <div class="bar-seg" style="width:0%;background:#ffeb3b;"></div>
-    <div class="bar-seg" style="width:0%;background:#f44336;"></div>
+<!-- Sentiment -->
+<div class="card">
+  <strong style="font-size:14px;">Market Sentiment Today: 🐻 Bearish</strong>
+  <div class="bar-wrap" style="margin-top:10px;">
+    <div style="width:4%;background:#43a047;"></div>
+    <div style="width:22%;background:#fdd835;"></div>
+    <div style="width:74%;background:#e53935;"></div>
   </div>
-  <div class="legend">
-    🟢 Strong 0% &nbsp;&nbsp;
-    🟡 Moderate 0% &nbsp;&nbsp;
-    🔴 Weak 0%
+  <div style="font-size:12px;color:#555;">
+    🟢 Strong 4% &nbsp;&nbsp;
+    🟡 Moderate 22% &nbsp;&nbsp;
+    🔴 Weak 74%
   </div>
 </div>
 
-<!-- Top 5 Picks -->
+<!-- Top Picks -->
 <h2>🏆 Top 5 Conviction Picks</h2>
 
+        <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                    padding:16px 20px;margin-bottom:14px;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:24px;">🟢</span>
+            <span style="font-size:20px;font-weight:700;">1. AVGO</span>
+            <span style="font-size:13px;color:#666;">Technology</span>
+            <span style="margin-left:auto;background:#1a237e;color:#fff;
+                         padding:4px 12px;border-radius:14px;font-size:13px;font-weight:600;">
+              Score: 13/17
+            </span>
+          </div>
+          <ul style="margin:0;padding-left:20px;font-size:13px;color:#333;line-height:1.7;">
+            <li style="margin:5px 0;"><span style="background:#fffde7;color:#f57f17;padding:2px 7px;border-radius:4px;font-size:11px;">⚠️</span> Volume: <b>1.4×</b> average — elevated activity</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Candle: Close <b>$385.57</b> vs Open <b>$372.82</b> (+3.4%)</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> 200-Day MA: Price <b>$385.57</b> vs MA <b>$356.84</b> — above long-term trend</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Institutional ownership <b>79.902%</b> · MFI <b>52.1</b> · Market Cap <b>$1834.4B</b></li><li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Last breakout: No prior breakout found</li>
+          </ul>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                    padding:16px 20px;margin-bottom:14px;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:24px;">🟢</span>
+            <span style="font-size:20px;font-weight:700;">2. QCOM</span>
+            <span style="font-size:13px;color:#666;">Technology</span>
+            <span style="margin-left:auto;background:#1a237e;color:#fff;
+                         padding:4px 12px;border-radius:14px;font-size:13px;font-weight:600;">
+              Score: 13/17
+            </span>
+          </div>
+          <ul style="margin:0;padding-left:20px;font-size:13px;color:#333;line-height:1.7;">
+            <li style="margin:5px 0;"><span style="background:#fffde7;color:#f57f17;padding:2px 7px;border-radius:4px;font-size:11px;">⚠️</span> Volume: <b>1.6×</b> average — elevated activity</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Candle: Close <b>$202.96</b> vs Open <b>$190.92</b> (+6.3%)</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> 200-Day MA: Price <b>$202.96</b> vs MA <b>$163.79</b> — above long-term trend</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Institutional ownership <b>84.8%</b> · MFI <b>54.5</b> · Market Cap <b>$213.9B</b></li><li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Last breakout: May 26, 2026 → -17.1%</li>
+          </ul>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                    padding:16px 20px;margin-bottom:14px;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:24px;">🟢</span>
+            <span style="font-size:20px;font-weight:700;">3. AMAT</span>
+            <span style="font-size:13px;color:#666;">Technology</span>
+            <span style="margin-left:auto;background:#1a237e;color:#fff;
+                         padding:4px 12px;border-radius:14px;font-size:13px;font-weight:600;">
+              Score: 13/17
+            </span>
+          </div>
+          <ul style="margin:0;padding-left:20px;font-size:13px;color:#333;line-height:1.7;">
+            <li style="margin:5px 0;"><span style="background:#fffde7;color:#f57f17;padding:2px 7px;border-radius:4px;font-size:11px;">⚠️</span> Volume: <b>1.6×</b> average — elevated activity</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Candle: Close <b>$552.64</b> vs Open <b>$522.49</b> (+5.8%)</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> 200-Day MA: Price <b>$552.64</b> vs MA <b>$306.58</b> — above long-term trend</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Institutional ownership <b>85.1%</b> · MFI <b>80.6</b> · Market Cap <b>$438.8B</b></li><li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Last breakout: No prior breakout found</li>
+          </ul>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                    padding:16px 20px;margin-bottom:14px;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:24px;">🟢</span>
+            <span style="font-size:20px;font-weight:700;">4. CSCO</span>
+            <span style="font-size:13px;color:#666;">Technology</span>
+            <span style="margin-left:auto;background:#1a237e;color:#fff;
+                         padding:4px 12px;border-radius:14px;font-size:13px;font-weight:600;">
+              Score: 12/17
+            </span>
+          </div>
+          <ul style="margin:0;padding-left:20px;font-size:13px;color:#333;line-height:1.7;">
+            <li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Volume: <b>1.1×</b> average — elevated activity</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Candle: Close <b>$121.83</b> vs Open <b>$117.18</b> (+4.0%)</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> 200-Day MA: Price <b>$121.83</b> vs MA <b>$80.84</b> — above long-term trend</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Institutional ownership <b>82.913%</b> · MFI <b>72.0</b> · Market Cap <b>$480.2B</b></li><li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Last breakout: No prior breakout found</li>
+          </ul>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
+                    padding:16px 20px;margin-bottom:14px;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:24px;">🟢</span>
+            <span style="font-size:20px;font-weight:700;">5. AMD</span>
+            <span style="font-size:13px;color:#666;">Technology</span>
+            <span style="margin-left:auto;background:#1a237e;color:#fff;
+                         padding:4px 12px;border-radius:14px;font-size:13px;font-weight:600;">
+              Score: 12/17
+            </span>
+          </div>
+          <ul style="margin:0;padding-left:20px;font-size:13px;color:#333;line-height:1.7;">
+            <li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Volume: <b>0.6×</b> average — elevated activity</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Candle: Close <b>$488.45</b> vs Open <b>$461.60</b> (+5.8%)</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> 200-Day MA: Price <b>$488.45</b> vs MA <b>$252.21</b> — above long-term trend</li><li style="margin:5px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;">✅</span> Institutional ownership <b>72.2%</b> · MFI <b>61.6</b> · Market Cap <b>$796.5B</b></li><li style="margin:5px 0;"><span style="background:#ffebee;color:#b71c1c;padding:2px 7px;border-radius:4px;font-size:11px;">❌</span> Last breakout: No prior breakout found</li>
+          </ul>
+        </div>
 
-<!-- Detailed Table -->
-<h2>📊 Detailed Conviction Dashboard</h2>
+<!-- Detail Table -->
+<h2>📊 Full Conviction Dashboard</h2>
 <div style="overflow-x:auto;">
 <table>
   <tr>
-    <th>Stock</th>
-    <th>Volume (w:2)</th>
-    <th>Breakout (w:2)</th>
-    <th>MA200 (w:2)</th>
-    <th>Inst. Own (w:3)</th>
-    <th>MFI (w:2)</th>
-    <th>Sector (w:3)</th>
-    <th>IV (w:1)</th>
-    <th>History (w:2)</th>
-    <th>Score /17</th>
+    <th style="text-align:left;padding-left:10px;">Stock</th>
+    <th>Volume<br><small>(w:2)</small></th>
+    <th>Candle<br><small>(w:2)</small></th>
+    <th>MA200<br><small>(w:2)</small></th>
+    <th>Inst.Own<br><small>(w:3)</small></th>
+    <th>MFI<br><small>(w:2)</small></th>
+    <th>Sector<br><small>(w:3)</small></th>
+    <th>IV<br><small>(w:1)</small></th>
+    <th>Last BO<br><small>(w:2)</small></th>
+    <th>Score<br><small>/17</small></th>
   </tr>
   
+        <tr>
+          <td style="font-weight:700;text-align:left;padding-left:10px;">
+            🟢 AVGO</td>
+          <td style="background:#fff9c4;">1.4×</td>
+          <td style="background:#c8e6c9;">
+            +3.4%</td>
+          <td style="background:#c8e6c9;">
+            ▲ Above</td>
+          <td style="background:#c8e6c9;">
+            79.902%</td>
+          <td style="background:#fff9c4;">52.1</td>
+          <td style="background:#c8e6c9;">Technology</td>
+          <td style="background:#c8e6c9;">34.4%</td>
+          <td style="background:#ffcdd2;">
+            N/A</td>
+          <td style="font-weight:800;font-size:15px;">13/17</td>
+        </tr>
+        <tr>
+          <td style="font-weight:700;text-align:left;padding-left:10px;">
+            🟢 QCOM</td>
+          <td style="background:#fff9c4;">1.6×</td>
+          <td style="background:#c8e6c9;">
+            +6.3%</td>
+          <td style="background:#c8e6c9;">
+            ▲ Above</td>
+          <td style="background:#c8e6c9;">
+            84.8%</td>
+          <td style="background:#fff9c4;">54.5</td>
+          <td style="background:#c8e6c9;">Technology</td>
+          <td style="background:#c8e6c9;">50.1%</td>
+          <td style="background:#ffcdd2;">
+            -17.1%</td>
+          <td style="font-weight:800;font-size:15px;">13/17</td>
+        </tr>
+        <tr>
+          <td style="font-weight:700;text-align:left;padding-left:10px;">
+            🟢 AMAT</td>
+          <td style="background:#fff9c4;">1.6×</td>
+          <td style="background:#c8e6c9;">
+            +5.8%</td>
+          <td style="background:#c8e6c9;">
+            ▲ Above</td>
+          <td style="background:#c8e6c9;">
+            85.1%</td>
+          <td style="background:#c8e6c9;">80.6</td>
+          <td style="background:#c8e6c9;">Technology</td>
+          <td style="background:#ffcdd2;">3.9%</td>
+          <td style="background:#ffcdd2;">
+            N/A</td>
+          <td style="font-weight:800;font-size:15px;">13/17</td>
+        </tr>
+        <tr>
+          <td style="font-weight:700;text-align:left;padding-left:10px;">
+            🟢 CSCO</td>
+          <td style="background:#ffcdd2;">1.1×</td>
+          <td style="background:#c8e6c9;">
+            +4.0%</td>
+          <td style="background:#c8e6c9;">
+            ▲ Above</td>
+          <td style="background:#c8e6c9;">
+            82.913%</td>
+          <td style="background:#c8e6c9;">72.0</td>
+          <td style="background:#c8e6c9;">Technology</td>
+          <td style="background:#fff9c4;">17.2%</td>
+          <td style="background:#ffcdd2;">
+            N/A</td>
+          <td style="font-weight:800;font-size:15px;">12/17</td>
+        </tr>
+        <tr>
+          <td style="font-weight:700;text-align:left;padding-left:10px;">
+            🟢 AMD</td>
+          <td style="background:#ffcdd2;">0.6×</td>
+          <td style="background:#c8e6c9;">
+            +5.8%</td>
+          <td style="background:#c8e6c9;">
+            ▲ Above</td>
+          <td style="background:#c8e6c9;">
+            72.2%</td>
+          <td style="background:#c8e6c9;">61.6</td>
+          <td style="background:#c8e6c9;">Technology</td>
+          <td style="background:#fff9c4;">23.8%</td>
+          <td style="background:#ffcdd2;">
+            N/A</td>
+          <td style="font-weight:800;font-size:15px;">12/17</td>
+        </tr>
 </table>
 </div>
 
-<!-- Factor Chart -->
+<!-- Charts -->
 <h2>🎯 Factor Contribution Chart</h2>
-<img src="score_chart.png" alt="Score breakdown by factor">
+<img src="score_chart.png" alt="Factor contribution">
 
-<!-- Sector + Rotation -->
-<div class="two-col" style="margin-top:24px;">
+<div class="two-col" style="margin-top:22px;">
   <div>
     <h2>🌀 Sector Rotation</h2>
-    <img src="sector_rotation.png" alt="Sector rotation chart">
+    <img src="sector_rotation.png" alt="Sector rotation">
   </div>
   <div>
-    <h2>📋 Sector Ranking Today</h2>
-    <table class="sector-table">
-      <tr><th>Sector</th><th>Daily Change</th></tr>
+    <h2>📋 Sector Ranking</h2>
+    <table>
+      <tr><th style="text-align:left;padding-left:10px;">Sector</th><th>Daily Δ</th></tr>
       
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#1 Technology</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+3.73%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#2 Materials</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+3.27%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#3 Industrials</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+3.24%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#4 Consumer Disc</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+2.48%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#5 Comm. Services</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+1.00%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#6 Healthcare</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+0.81%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#7 Financials</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+0.75%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#8 Utilities</td>
+          <td style="background:#e8f5e9;color:#2e7d32;font-weight:700;">+0.11%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#9 Real Estate</td>
+          <td style="background:#ffebee;color:#c62828;font-weight:700;">-0.16%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#10 Consumer Stpl</td>
+          <td style="background:#ffebee;color:#c62828;font-weight:700;">-0.26%</td>
+        </tr>
+        <tr>
+          <td style="text-align:left;padding-left:10px;font-weight:600;">#11 Energy</td>
+          <td style="background:#ffebee;color:#c62828;font-weight:700;">-1.94%</td>
+        </tr>
     </table>
   </div>
 </div>
 
-<div class="disclaimer">
-  ⚠️ This report is for informational purposes only and does not constitute financial advice.
-  Always do your own research before making investment decisions.
-  Scoring weights: Institutional Ownership (3) · Sector Alignment (3) ·
-  Volume Spike (2) · Breakout Candle (2) · MA200 (2) · MFI (2) · History (2) · IV (1).
+<div class="note">
+  ⚠️ For informational purposes only — not financial advice. Do your own research.<br>
+  Weights: Institutional Ownership (3) · Sector Alignment (3) · Volume Spike (2) ·
+  Breakout Candle (2) · MA200 (2) · MFI (2) · History (2) · IV (1)
 </div>
 
 </body>
