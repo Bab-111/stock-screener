@@ -1,4 +1,4 @@
-name: Stock Breakout Screener
+*********************************************************************name: Stock Breakout Screener
 
 on:
   # Run every 30 minutes on weekdays from 13:30 UTC (9:30 AM ET pre-market)
