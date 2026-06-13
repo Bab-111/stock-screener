@@ -1,31 +1,32 @@
 name: Stock Breakout Screener
 
+# Schedule strategy (all times UTC, ET = UTC-4 in summer):
+#
+# Phase              UTC    ET        Runs
+# ─────────────────────────────────────────
+# Pre-market scan    13:00  9:00 AM    1    (before open, see overnight moves)
+# Market open        13:30  9:30 AM    1    (opening bell)
+# Morning            14:30  10:30 AM   1    (first hour settles)
+# Midday             17:00  1:00 PM    1    (lunch hour check)
+# Power hour         19:00  3:00 PM    1    (last hour of trading)
+# Market close       20:00  4:00 PM    1    (closing bell)
+# After-hours        22:00  6:00 PM    1    (after-hours activity)
+# Late after-hours   00:00  8:00 PM    1    (end of after-hours)
+#
+# Total: 8 runs/day x 20 trading days = 160 runs/month
+# At ~4min each = ~640 min/month = 32% of free tier (2000 min)
+
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * 1-5"
+    - cron: "0 13 * * 1-5"
+    - cron: "30 13 * * 1-5"
     - cron: "30 14 * * 1-5"
-    - cron: "0 15 * * 1-5"
-    - cron: "30 15 * * 1-5"
-    - cron: "0 16 * * 1-5"
-    - cron: "30 16 * * 1-5"
     - cron: "0 17 * * 1-5"
-    - cron: "30 17 * * 1-5"
-    - cron: "0 18 * * 1-5"
-    - cron: "30 18 * * 1-5"
     - cron: "0 19 * * 1-5"
-    - cron: "30 19 * * 1-5"
     - cron: "0 20 * * 1-5"
-    - cron: "30 20 * * 1-5"
-    - cron: "0 21 * * 1-5"
-    - cron: "30 21 * * 1-5"
     - cron: "0 22 * * 1-5"
-    - cron: "30 22 * * 1-5"
-    - cron: "0 23 * * 1-5"
-    - cron: "30 23 * * 1-5"
     - cron: "0 0 * * 2-6"
-    - cron: "30 0 * * 2-6"
-    - cron: "0 1 * * 2-6"
 
 permissions:
   contents: write
@@ -33,7 +34,7 @@ permissions:
 jobs:
   run-screener:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +48,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run screener
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/daily_report.py
 
       - name: Deploy to GitHub Pages
