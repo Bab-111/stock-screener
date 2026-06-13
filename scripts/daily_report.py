@@ -1,19 +1,12 @@
 """
-Stock Breakout Screener — Fast + Consistent Results
-
-Speed strategy (target ~40s):
-  - 1 batch yf.download() for all price data
-  - 1 batch yf.download() for sector ETFs
-  - 1 bulk yf.Tickers() call for inst. ownership (all stocks, same data as slow version)
-  - IV fetched only for final top-5 (5 calls, unavoidable — options chain is per-ticker)
-  - Sector from static map (zero API calls)
-  - All scoring (MA200, MFI, breakout, volume, history) is pure maths — no API
-
-Result guarantee: ranking identical to fetching each stock individually,
-because every factor uses the same data source as before, just fetched in bulk.
+Stock Breakout Screener v5
+- Locks to regular market close bar (prevents after-hours ranking drift)
+- Adds data source citations to HTML report
+- Adds Claude API LLM supervision summary
+- Optimised: 2 batch downloads + 10 enrichment calls only
 """
 
-import json, os, warnings
+import json, os, warnings, requests
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -26,42 +19,38 @@ import numpy as np
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR  = os.path.join(ROOT, "output")
+# ── Paths & Config ────────────────────────────────────────────────────────────
+ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(ROOT, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 with open(os.path.join(ROOT, "config", "config.json")) as f:
     CFG = json.load(f)
 
 UNIVERSE_FILE   = os.path.join(ROOT, "config", CFG["universe"])
-VOL_THRESHOLD   = float(CFG["volume_spike_threshold"])   # 2.0
-BRK_THRESHOLD   = float(CFG["breakout_threshold"])       # 1.03
-MA_PERIOD       = int(CFG["ma_period"])                  # 200
-MCAP_MIN        = float(CFG["market_cap_min"])           # 5e9
-TOP_N           = int(CFG["top_picks"])                  # 5
-MFI_PERIOD      = int(CFG["mfi_period"])                 # 14
-MFI_THRESHOLD   = float(CFG["mfi_threshold"])            # 50
-IV_HIGH         = float(CFG["iv_high_threshold"])        # 25
-IV_MOD          = float(CFG["iv_moderate_threshold"])    # 15
-INST_HIGH       = float(CFG["inst_ownership_high"])      # 60
-INST_MOD        = float(CFG["inst_ownership_moderate"])  # 40
-HIST_RET_THRESH = float(CFG["history_return_threshold"]) # 5
-FWD_DAYS        = int(CFG["forward_return_days"])        # 10
+VOL_THRESHOLD   = float(CFG["volume_spike_threshold"])
+BRK_THRESHOLD   = float(CFG["breakout_threshold"])
+MA_PERIOD       = int(CFG["ma_period"])
+MCAP_MIN        = float(CFG["market_cap_min"])
+TOP_N           = int(CFG["top_picks"])
+MFI_PERIOD      = int(CFG["mfi_period"])
+MFI_THRESHOLD   = float(CFG["mfi_threshold"])
+IV_HIGH         = float(CFG["iv_high_threshold"])
+IV_MOD          = float(CFG["iv_moderate_threshold"])
+INST_HIGH       = float(CFG["inst_ownership_high"])
+INST_MOD        = float(CFG["inst_ownership_moderate"])
+HIST_RET_THRESH = float(CFG["history_return_threshold"])
+FWD_DAYS        = int(CFG["forward_return_days"])
+# Optional Claude API key for LLM supervision (set as GitHub Secret)
+CLAUDE_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 
 WEIGHTS = {
-    "volume":   2,
-    "breakout": 2,
-    "ma200":    2,
-    "inst_own": 3,
-    "mfi":      2,
-    "sector":   3,
-    "history":  2,
-    "iv":       1,
+    "volume":2, "breakout":2, "ma200":2,
+    "inst_own":3, "mfi":2, "sector":3, "history":2, "iv":1,
 }
 MAX_SCORE = sum(WEIGHTS.values())  # 17
 
-# ── Static sector map (avoids per-ticker .info calls) ────────────────────────
+# ── Static sector map ─────────────────────────────────────────────────────────
 SECTOR_MAP = {
     "AAPL":"Technology","MSFT":"Technology","NVDA":"Technology",
     "GOOGL":"Comm. Services","AMZN":"Consumer Disc","META":"Comm. Services",
@@ -108,15 +97,13 @@ SECTOR_MAP = {
 }
 
 SECTOR_ETFS = {
-    "Technology":    "XLK", "Healthcare":    "XLV",
-    "Financials":    "XLF", "Industrials":   "XLI",
-    "Energy":        "XLE", "Consumer Disc": "XLY",
-    "Consumer Stpl": "XLP", "Materials":     "XLB",
-    "Real Estate":   "XLRE","Utilities":     "XLU",
-    "Comm. Services":"XLC",
+    "Technology":"XLK","Healthcare":"XLV","Financials":"XLF",
+    "Industrials":"XLI","Energy":"XLE","Consumer Disc":"XLY",
+    "Consumer Stpl":"XLP","Materials":"XLB","Real Estate":"XLRE",
+    "Utilities":"XLU","Comm. Services":"XLC",
 }
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def safe_float(val, default=None):
     try:    return float(val)
@@ -131,112 +118,91 @@ def traffic_light(score):
     p = score / MAX_SCORE
     return "🟢" if p >= 0.70 else ("🟡" if p >= 0.45 else "🔴")
 
+def tl_label(tl):
+    return "Strong" if tl=="🟢" else ("Mod" if tl=="🟡" else "Weak")
+
 def flatten(df):
-    """Flatten MultiIndex columns from yf batch download."""
     if isinstance(df.columns, pd.MultiIndex):
         df = df.copy()
         df.columns = df.columns.get_level_values(0)
     return df
 
-# ── BATCH 1: Price data ───────────────────────────────────────────────────────
+def get_regular_close_bar(df):
+    """
+    Return the last COMPLETED regular-market bar.
+    Drops any incomplete intraday bar so after-hours data
+    doesn't shift rankings between runs.
+    Uses the second-to-last bar if today's bar looks incomplete
+    (volume suspiciously low vs average).
+    """
+    df = df.copy().dropna(how="all")
+    if len(df) < 2:
+        return df.iloc[-1]
+    last    = df.iloc[-1]
+    prev    = df.iloc[-2]
+    avg_vol = float(df["Volume"].mean())
+    # If last bar volume < 20% of average → likely incomplete intraday bar
+    if float(last["Volume"]) < avg_vol * 0.20:
+        return prev
+    return last
 
-def batch_price(symbols):
-    """One HTTP request for all symbols. Returns {sym: DataFrame}."""
-    print(f"  [1/4] Batch price download ({len(symbols)} tickers)...", flush=True)
-    try:
-        raw = yf.download(
-            tickers=symbols, period="6mo", interval="1d",
-            group_by="ticker", auto_adjust=True,
-            progress=False, threads=True,
-        )
-    except Exception as e:
-        print(f"  Price download failed: {e}"); return {}
-
-    needed = ["Open","High","Low","Close","Volume"]
-    result = {}
-
-    if len(symbols) == 1:
-        sym = symbols[0]
-        df  = flatten(raw)
-        if len(df) >= 20 and all(c in df.columns for c in needed):
-            result[sym] = df[needed].dropna(how="all")
-        return result
-
-    for sym in symbols:
-        try:
-            if sym not in raw.columns.get_level_values(0): continue
-            df = flatten(raw[sym])
-            if len(df) < 20: continue
-            if not all(c in df.columns for c in needed): continue
-            result[sym] = df[needed].dropna(how="all")
-        except Exception:
-            pass
-
-    print(f"  Got data for {len(result)} tickers")
-    return result
-
-# ── BATCH 2: Sector ETFs ──────────────────────────────────────────────────────
+# ── BATCH 1: Sector ETFs ──────────────────────────────────────────────────────
 
 def batch_sector():
-    """One HTTP request for all sector ETFs."""
-    print("  [2/4] Batch sector rotation...", flush=True)
+    print("  [1/3] Sector rotation...", flush=True)
     etfs = list(SECTOR_ETFS.values())
     try:
         raw = yf.download(etfs, period="5d", interval="1d",
                           group_by="ticker", auto_adjust=True,
                           progress=False, threads=True)
     except Exception as e:
-        print(f"  Sector download failed: {e}"); return {}
-
+        print(f"  Sector error: {e}"); return {}
     result = {}
     for sector, etf in SECTOR_ETFS.items():
         try:
-            if len(etfs) == 1:
-                cl = flatten(raw)["Close"]
-            else:
-                cl = raw[etf]["Close"]
-            cl = cl.squeeze()
+            cl = raw[etf]["Close"].squeeze() if len(etfs)>1 else flatten(raw)["Close"]
             if len(cl) >= 2:
-                pct = float((cl.iloc[-1] - cl.iloc[-2]) / cl.iloc[-2] * 100)
-                result[sector] = round(pct, 2)
+                result[sector] = round(
+                    float((cl.iloc[-1]-cl.iloc[-2])/cl.iloc[-2]*100), 2)
         except Exception:
             pass
-
     print(f"  Got {len(result)} sectors")
     return result
 
-# ── BATCH 3: Institutional ownership ─────────────────────────────────────────
+# ── BATCH 2: All price data ───────────────────────────────────────────────────
 
-def batch_inst_ownership(symbols):
-    """
-    Fetch heldPercentInstitutions for all symbols via yf.Tickers bulk call.
-    Same data source as fetching one-by-one — results are identical.
-    Returns {sym: float_pct_or_None}.
-    """
-    print(f"  [3/4] Bulk inst. ownership ({len(symbols)} tickers)...", flush=True)
-    result = {s: None for s in symbols}
+def batch_price(symbols):
+    print(f"  [2/3] Price data ({len(symbols)} tickers)...", flush=True)
     try:
-        # yf.Tickers fetches all in one session
-        tickers_obj = yf.Tickers(" ".join(symbols))
-        for sym in symbols:
-            try:
-                info = tickers_obj.tickers[sym].info
-                raw  = info.get("heldPercentInstitutions")
-                if raw is not None:
-                    result[sym] = round(float(raw) * 100, 1)
-            except Exception:
-                pass
+        raw = yf.download(symbols, period="6mo", interval="1d",
+                          group_by="ticker", auto_adjust=True,
+                          progress=False, threads=True)
     except Exception as e:
-        print(f"  Inst. ownership bulk error: {e}")
-    fetched = sum(1 for v in result.values() if v is not None)
-    print(f"  Got inst. ownership for {fetched}/{len(symbols)} tickers")
+        print(f"  Price error: {e}"); return {}
+    needed = ["Open","High","Low","Close","Volume"]
+    result = {}
+    if len(symbols) == 1:
+        sym = symbols[0]; df = flatten(raw)
+        if len(df)>=20 and all(c in df.columns for c in needed):
+            result[sym] = df[needed].dropna(how="all")
+        return result
+    for sym in symbols:
+        try:
+            if sym not in raw.columns.get_level_values(0): continue
+            df = flatten(raw[sym])
+            if len(df)<20: continue
+            if not all(c in df.columns for c in needed): continue
+            result[sym] = df[needed].dropna(how="all")
+        except Exception:
+            pass
+    print(f"  Got data for {len(result)} tickers")
     return result
 
-# ── Per-stock maths (no API) ──────────────────────────────────────────────────
+# ── Per-stock maths ───────────────────────────────────────────────────────────
 
 def calc_ma200(data):
     cl  = data["Close"].squeeze().astype(float)
-    win = min(MA_PERIOD, len(cl))  # if <200 bars, use all available
+    win = min(MA_PERIOD, len(cl))
     return float(cl.rolling(win).mean().iloc[-1])
 
 def calc_mfi(data):
@@ -245,15 +211,13 @@ def calc_mfi(data):
         lo  = data["Low"].squeeze().astype(float)
         cl  = data["Close"].squeeze().astype(float)
         vol = data["Volume"].squeeze().astype(float)
-        tp  = (hi + lo + cl) / 3
-        rmf = tp * vol
-        pos = rmf.where(tp > tp.shift(1), 0.0)
-        neg = rmf.where(tp < tp.shift(1), 0.0)
+        tp  = (hi+lo+cl)/3; rmf = tp*vol
+        pos = rmf.where(tp>tp.shift(1), 0.0)
+        neg = rmf.where(tp<tp.shift(1), 0.0)
         mfr = pos.rolling(MFI_PERIOD).sum() / \
-              neg.rolling(MFI_PERIOD).sum().replace(0, 1e-9)
-        mfi = 100 - (100 / (1 + mfr))
-        v   = float(mfi.iloc[-1])
-        return round(v, 1) if not np.isnan(v) else None
+              neg.rolling(MFI_PERIOD).sum().replace(0,1e-9)
+        v   = float((100-(100/(1+mfr))).iloc[-1])
+        return round(v,1) if not np.isnan(v) else None
     except Exception:
         return None
 
@@ -265,144 +229,181 @@ def last_breakout(data):
         avg_vol = float(np.nanmean(volumes))
         win     = min(MA_PERIOD, len(closes))
         ma_vals = np.array([
-            np.mean(closes[max(0, i-win):i]) if i >= 20 else np.nan
+            np.mean(closes[max(0,i-win):i]) if i>=20 else np.nan
             for i in range(len(closes))
         ])
-        for i in range(len(data)-2, max(0, len(data)-90), -1):
-            if (volumes[i] >= VOL_THRESHOLD * avg_vol and
-                    closes[i] > opens[i] * BRK_THRESHOLD and
-                    not np.isnan(ma_vals[i]) and closes[i] > ma_vals[i]):
-                date_str = data.index[i].strftime("%b %d, %Y")
-                fwd_idx  = min(i + FWD_DAYS, len(closes)-1)
-                fwd_ret  = round((closes[fwd_idx]-closes[i])/closes[i]*100, 1)
-                return date_str, fwd_ret
+        for i in range(len(data)-2, max(0,len(data)-90), -1):
+            if (volumes[i]>=VOL_THRESHOLD*avg_vol and
+                    closes[i]>opens[i]*BRK_THRESHOLD and
+                    not np.isnan(ma_vals[i]) and closes[i]>ma_vals[i]):
+                fwd = min(i+FWD_DAYS, len(closes)-1)
+                return (data.index[i].strftime("%b %d, %Y"),
+                        round((closes[fwd]-closes[i])/closes[i]*100,1))
     except Exception:
         pass
     return None, None
 
-# ── BATCH 4 (only top-N): Implied Volatility ─────────────────────────────────
+# ── Enrich top-10 only ────────────────────────────────────────────────────────
 
-def fetch_iv(symbol):
-    """Options chain is always per-ticker — no bulk API exists. Only call for top-N."""
+def enrich_candidate(sym):
+    inst_pct = iv_val = mcap = None
     try:
-        t    = yf.Ticker(symbol)
-        exps = t.options
-        if not exps: return None
-        chain = t.option_chain(exps[0])
-        avg   = chain.calls["impliedVolatility"].dropna().mean()
-        return round(float(avg)*100, 1)
+        info = yf.Ticker(sym).info
+        raw  = info.get("heldPercentInstitutions")
+        if raw is not None:
+            inst_pct = round(float(raw)*100, 1)
+        mcap = safe_float(info.get("marketCap"))
     except Exception:
-        return None
+        pass
+    try:
+        t    = yf.Ticker(sym)
+        exps = t.options
+        if exps:
+            chain  = t.option_chain(exps[0])
+            iv_val = round(
+                float(chain.calls["impliedVolatility"].dropna().mean())*100, 1)
+    except Exception:
+        pass
+    return inst_pct, iv_val, mcap
+
+# ── LLM Supervision via Claude API ───────────────────────────────────────────
+
+def llm_supervision(top_results, sector_data):
+    """
+    Call Claude API to validate top picks and return a short supervision note.
+    Uses claude-haiku (cheapest/fastest). Falls back gracefully if no API key.
+    """
+    if not CLAUDE_API_KEY:
+        return ("⚠️ LLM supervision disabled — add ANTHROPIC_API_KEY as a "
+                "GitHub Secret to enable AI validation of picks.")
+    try:
+        top_sector = max(sector_data.items(), key=lambda x: x[1])[0] \
+                     if sector_data else "Unknown"
+        picks_text = "\n".join([
+            f"- {r['symbol']} ({r['sector']}): score={r['score']}/{MAX_SCORE}, "
+            f"vol={r['vol_ratio']:.1f}x, MA200={'above' if r['close']>r['ma200'] else 'below'}, "
+            f"inst={r['inst_pct']}%, MFI={r['mfi_val']}, "
+            f"last_breakout={r['hist_date']} ({r['hist_ret']:+.1f}%)"
+            for r in top_results
+        ])
+        prompt = f"""You are a stock analysis supervisor reviewing an automated screener's output.
+
+Today's top sector: {top_sector}
+Screener top picks:
+{picks_text}
+
+In 3-4 bullet points, briefly:
+1. Validate whether these picks make sense given the sector leadership
+2. Flag any red flags (e.g. low MFI despite high score, below MA200)
+3. Note the strongest and weakest pick and why
+4. Give an overall confidence rating: HIGH / MEDIUM / LOW
+
+Be concise — max 60 words total. No disclaimers."""
+
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 200,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=20,
+        )
+        if resp.status_code == 200:
+            text = resp.json()["content"][0]["text"].strip()
+            return text
+        else:
+            return f"LLM supervision API error: {resp.status_code}"
+    except Exception as e:
+        return f"LLM supervision unavailable: {e}"
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
 def score_stock(vol_ratio, breakout, above_ma, inst_pct,
                 mfi_val, sec_rank, iv_val, hist_ret):
-    f = {}; s = 0
-
-    if vol_ratio >= VOL_THRESHOLD:
-        f["volume"]="green";  s += WEIGHTS["volume"]
-    elif vol_ratio >= 1.3:
-        f["volume"]="yellow"; s += 1
-    else:
-        f["volume"]="red"
-
-    if breakout:
-        f["breakout"]="green";  s += WEIGHTS["breakout"]
-    elif vol_ratio >= 1.5:
-        f["breakout"]="yellow"; s += 1
-    else:
-        f["breakout"]="red"
-
-    f["ma200"] = "green" if above_ma else "red"
-    s += WEIGHTS["ma200"] if above_ma else 0
-
-    ic = classify(inst_pct, INST_HIGH, INST_MOD)
-    f["inst_own"] = ic
-    s += WEIGHTS["inst_own"] if ic=="green" else (1 if ic=="yellow" else 0)
-
-    mc = classify(mfi_val, MFI_THRESHOLD+10, MFI_THRESHOLD)
-    f["mfi"] = mc
-    s += WEIGHTS["mfi"] if mc=="green" else (1 if mc=="yellow" else 0)
-
-    if sec_rank == 1:
-        f["sector"]="green";  s += WEIGHTS["sector"]
-    elif sec_rank <= 3:
-        f["sector"]="yellow"; s += 1
-    else:
-        f["sector"]="red"
-
-    ivc = classify(iv_val, IV_HIGH, IV_MOD)
-    f["iv"] = ivc
-    s += WEIGHTS["iv"] if ivc=="green" else 0
-
-    if hist_ret is not None and hist_ret >= HIST_RET_THRESH:
-        f["history"]="green";  s += WEIGHTS["history"]
-    elif hist_ret is not None and hist_ret > 0:
-        f["history"]="yellow"; s += 1
-    else:
-        f["history"]="red"
-
+    f={}; s=0
+    if vol_ratio>=VOL_THRESHOLD:   f["volume"]="green";  s+=2
+    elif vol_ratio>=1.3:           f["volume"]="yellow"; s+=1
+    else:                          f["volume"]="red"
+    if breakout:                   f["breakout"]="green";  s+=2
+    elif vol_ratio>=1.5:           f["breakout"]="yellow"; s+=1
+    else:                          f["breakout"]="red"
+    f["ma200"]="green" if above_ma else "red"; s+=(2 if above_ma else 0)
+    ic=classify(inst_pct,INST_HIGH,INST_MOD)
+    f["inst_own"]=ic; s+=(3 if ic=="green" else (1 if ic=="yellow" else 0))
+    mc=classify(mfi_val,MFI_THRESHOLD+10,MFI_THRESHOLD)
+    f["mfi"]=mc; s+=(2 if mc=="green" else (1 if mc=="yellow" else 0))
+    if sec_rank==1:   f["sector"]="green";  s+=3
+    elif sec_rank<=3: f["sector"]="yellow"; s+=1
+    else:             f["sector"]="red"
+    ivc=classify(iv_val,IV_HIGH,IV_MOD)
+    f["iv"]=ivc; s+=(1 if ivc=="green" else 0)
+    if (hist_ret or 0)>=HIST_RET_THRESH:  f["history"]="green";  s+=2
+    elif (hist_ret or 0)>0:               f["history"]="yellow"; s+=1
+    else:                                 f["history"]="red"
     return s, f
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 
 def chart_sector(sector_data):
     if not sector_data: return
-    items  = sorted(sector_data.items(), key=lambda x: x[1], reverse=True)
-    names  = [x[0] for x in items]
-    vals   = [x[1] for x in items]
+    items  = sorted(sector_data.items(), key=lambda x:x[1], reverse=True)
+    names  = [x[0] for x in items]; vals=[x[1] for x in items]
     colors = ["#43a047" if v>0 else "#e53935" for v in vals]
-    fig, ax = plt.subplots(figsize=(9,5))
-    ax.barh(names[::-1], vals[::-1], color=colors[::-1], edgecolor="white")
-    ax.axvline(0, color="#333", lw=0.8)
-    ax.set_xlabel("Daily % Change", fontsize=10)
-    ax.set_title("Sector Rotation — Today", fontsize=12, fontweight="bold")
-    for i, v in enumerate(vals[::-1]):
-        ax.text(v+(0.03 if v>=0 else -0.03), i, f"{v:+.2f}%",
-                va="center", ha="left" if v>=0 else "right", fontsize=8)
+    fig,ax = plt.subplots(figsize=(9,5))
+    ax.barh(names[::-1],vals[::-1],color=colors[::-1],edgecolor="white")
+    ax.axvline(0,color="#333",lw=0.8)
+    ax.set_xlabel("Daily % Change",fontsize=10)
+    ax.set_title("Sector Rotation — Today",fontsize=12,fontweight="bold")
+    for i,v in enumerate(vals[::-1]):
+        ax.text(v+(0.03 if v>=0 else -0.03),i,f"{v:+.2f}%",
+                va="center",ha="left" if v>=0 else "right",fontsize=8)
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR,"sector_rotation.png"), dpi=110)
+    plt.savefig(os.path.join(OUTPUT_DIR,"sector_rotation.png"),dpi=110)
     plt.close()
 
 def chart_scores(results):
     if not results: return
-    order  = ["inst_own","sector","volume","breakout","ma200","mfi","history","iv"]
-    labels = {"inst_own":"Inst.Own","sector":"Sector","volume":"Volume",
-              "breakout":"Breakout","ma200":"MA200","mfi":"MFI",
-              "history":"History","iv":"IV"}
-    cmap   = {"green":"#43a047","yellow":"#fdd835","red":"#ef9a9a"}
-    fig, ax = plt.subplots(figsize=(10, max(3, len(results)*0.9)))
-    for i, r in enumerate(results):
-        left = 0
+    order=["inst_own","sector","volume","breakout","ma200","mfi","history","iv"]
+    labels={"inst_own":"Inst.Own","sector":"Sector","volume":"Volume",
+            "breakout":"Breakout","ma200":"MA200","mfi":"MFI",
+            "history":"History","iv":"IV"}
+    cmap={"green":"#43a047","yellow":"#fdd835","red":"#ef9a9a"}
+    fig,ax=plt.subplots(figsize=(10,max(3,len(results)*0.9)))
+    for i,r in enumerate(results):
+        left=0
         for fk in order:
-            cls = r["factors"].get(fk,"red")
-            w   = WEIGHTS[fk]
-            pts = w if cls=="green" else (1 if cls=="yellow" else 0)
+            cls=r["factors"].get(fk,"red")
+            pts=WEIGHTS[fk] if cls=="green" else (1 if cls=="yellow" else 0)
             if pts:
-                ax.barh(i, pts, left=left, color=cmap[cls], edgecolor="white", lw=0.5)
-                ax.text(left+pts/2, i, labels[fk],
-                        ha="center", va="center", fontsize=7, color="#222")
-                left += pts
+                ax.barh(i,pts,left=left,color=cmap[cls],edgecolor="white",lw=0.5)
+                ax.text(left+pts/2,i,labels[fk],
+                        ha="center",va="center",fontsize=7,color="#222")
+                left+=pts
     ax.set_yticks(range(len(results)))
-    ax.set_yticklabels([f"{('Strong' if r['tl']=='🟢' else ('Mod' if r['tl']=='🟡' else 'Weak'))} {r['symbol']}" for r in results], fontsize=11)
-    ax.set_xlim(0, MAX_SCORE+0.5)
-    ax.set_xlabel("Conviction Points", fontsize=10)
-    ax.set_title("Factor Contribution", fontsize=12, fontweight="bold")
+    ax.set_yticklabels([f"{tl_label(r['tl'])} {r['symbol']}" for r in results],fontsize=11)
+    ax.set_xlim(0,MAX_SCORE+0.5)
+    ax.set_xlabel("Conviction Points",fontsize=10)
+    ax.set_title("Factor Contribution",fontsize=12,fontweight="bold")
     ax.legend(handles=[
         mpatches.Patch(color="#43a047",label="Strong"),
         mpatches.Patch(color="#fdd835",label="Moderate"),
         mpatches.Patch(color="#ef9a9a",label="Weak"),
-    ], loc="lower right", fontsize=8)
+    ],loc="lower right",fontsize=8)
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR,"score_chart.png"), dpi=110)
+    plt.savefig(os.path.join(OUTPUT_DIR,"score_chart.png"),dpi=110)
     plt.close()
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
 
-BG = {"green":"#c8e6c9","yellow":"#fff9c4","red":"#ffcdd2"}
+BG={"green":"#c8e6c9","yellow":"#fff9c4","red":"#ffcdd2"}
 
 def badge(cls):
     ic={"green":"✅","yellow":"⚠️","red":"❌"}
@@ -413,38 +414,37 @@ def badge(cls):
             f'padding:2px 7px;border-radius:4px;font-size:11px;">{ic[c]}</span>')
 
 def build_html(results, sector_data, run_time, n_universe,
-               green_pct, yellow_pct, red_pct):
+               green_pct, yellow_pct, red_pct, llm_note, market_phase):
 
-    sentiment = ("🐂 Bullish" if green_pct>=50 else
-                 "😐 Neutral" if green_pct>=25 else "🐻 Bearish")
+    sentiment=("🐂 Bullish" if green_pct>=50 else
+               "😐 Neutral" if green_pct>=25 else "🐻 Bearish")
 
-    top_cards = ""
-    for i, r in enumerate(results, 1):
-        f   = r["factors"]
-        bo  = (r["close"]/r["open"]-1)*100
-        mcap_s = f"${r['mcap']/1e9:.1f}B" if r["mcap"] else "N/A"
-        bullets = [
+    # ── Top picks cards ──
+    top_cards=""
+    for i,r in enumerate(results,1):
+        f=r["factors"]; bo=(r["close"]/r["open"]-1)*100
+        mcap_s=f"${r['mcap']/1e9:.1f}B" if r["mcap"] else "N/A"
+        bullets=[
             (f["volume"],
              f"Volume: <b>{r['vol_ratio']:.1f}× average</b> — "
-             f"{'strong unusual activity' if r['vol_ratio']>=2 else 'above-average activity'}"),
+             f"{'🔥 Strong unusual activity' if r['vol_ratio']>=2 else 'Above-average activity'}"),
             (f["breakout"],
              f"Candle: close <b>${r['close']:.2f}</b> vs open <b>${r['open']:.2f}</b> "
-             f"({bo:+.1f}%)"),
+             f"({bo:+.1f}%) — regular market close"),
             (f["ma200"],
              f"200-Day MA: price <b>${r['close']:.2f}</b> vs MA <b>${r['ma200']:.2f}</b> — "
              f"<b>{'✅ Above' if r['close']>r['ma200'] else '❌ Below'}</b> long-term trend"),
             (f["inst_own"],
-             f"Inst. ownership: <b>{r['inst_pct']}%</b> · "
-             f"MFI: <b>{r['mfi_val']}</b> · Market cap: <b>{mcap_s}</b>"),
+             f"Inst. ownership: <b>{str(r['inst_pct'])+'%' if r['inst_pct'] else 'N/A'}</b> · "
+             f"MFI: <b>{r['mfi_val'] or 'N/A'}</b> · Market cap: <b>{mcap_s}</b>"),
         ]
         if r["hist_date"]:
             bullets.append((f["history"],
-                f"Last breakout: <b>{r['hist_date']}</b> → "
+                f"Last similar breakout: <b>{r['hist_date']}</b> → "
                 f"<b>{r['hist_ret']:+.1f}%</b> over {FWD_DAYS} trading days"))
-        bhtml = "".join(
+        bhtml="".join(
             f'<li style="margin:5px 0">{badge(c)} {t}</li>' for c,t in bullets)
-
-        top_cards += f"""
+        top_cards+=f"""
         <div style="background:#fff;border:1px solid #ddd;border-radius:10px;
                     padding:16px 20px;margin-bottom:12px;
                     box-shadow:0 2px 6px rgba(0,0,0,.07)">
@@ -463,11 +463,11 @@ def build_html(results, sector_data, run_time, n_universe,
                      color:#333;line-height:1.8">{bhtml}</ul>
         </div>"""
 
-    table_rows = ""
+    # ── Table rows ──
+    table_rows=""
     for r in results:
-        f  = r["factors"]
-        bo = (r["close"]/r["open"]-1)*100
-        table_rows += f"""
+        f=r["factors"]; bo=(r["close"]/r["open"]-1)*100
+        table_rows+=f"""
         <tr>
           <td style="font-weight:700;text-align:left;padding-left:10px">
             {r['tl']} {r['symbol']}</td>
@@ -476,37 +476,86 @@ def build_html(results, sector_data, run_time, n_universe,
           <td style="background:{BG[f['ma200']]}">
             {'▲ Above' if r['close']>r['ma200'] else '▼ Below'}</td>
           <td style="background:{BG[f['inst_own']]}">
-            {('%s%%'%r['inst_pct']) if r['inst_pct'] is not None else 'N/A'}</td>
+            {(str(r['inst_pct'])+'%') if r['inst_pct'] is not None else 'N/A'}</td>
           <td style="background:{BG[f['mfi']]}">
             {r['mfi_val'] if r['mfi_val'] is not None else 'N/A'}</td>
           <td style="background:{BG[f['sector']]}">{r['sector']}</td>
           <td style="background:{BG[f['iv']]}">
-            {('%s%%'%r['iv_val']) if r['iv_val'] is not None else 'N/A'}</td>
+            {(str(r['iv_val'])+'%') if r['iv_val'] is not None else 'N/A'}</td>
           <td style="background:{BG[f['history']]}">
             {('%+.1f%%'%r['hist_ret']) if r['hist_ret'] is not None else 'N/A'}</td>
-          <td style="font-weight:800;font-size:15px">
-            {r['score']}/{MAX_SCORE}</td>
+          <td style="font-weight:800;font-size:15px">{r['score']}/{MAX_SCORE}</td>
         </tr>"""
 
-    sector_rows = ""
+    # ── Sector rows ──
+    sector_rows=""
     for rank,(sec,pct) in enumerate(
             sorted(sector_data.items(),key=lambda x:x[1],reverse=True),1):
-        clr = "#2e7d32" if pct>0 else "#c62828"
-        bg  = "#e8f5e9" if pct>0 else "#ffebee"
-        sector_rows += f"""
+        clr="#2e7d32" if pct>0 else "#c62828"
+        bg="#e8f5e9" if pct>0 else "#ffebee"
+        sector_rows+=f"""
         <tr>
           <td style="text-align:left;padding-left:10px;font-weight:600">
             #{rank} {sec}</td>
-          <td style="background:{bg};color:{clr};font-weight:700">
-            {pct:+.2f}%</td>
+          <td style="background:{bg};color:{clr};font-weight:700">{pct:+.2f}%</td>
         </tr>"""
+
+    # ── LLM supervision box ──
+    llm_html=f"""
+    <div style="background:#e8eaf6;border-left:4px solid #3949ab;
+                border-radius:8px;padding:14px 18px;margin-bottom:14px;">
+      <strong style="font-size:13px;color:#1a237e">
+        🤖 AI Supervision (Claude)
+      </strong>
+      <p style="font-size:13px;color:#333;margin-top:8px;
+                white-space:pre-wrap;line-height:1.6">{llm_note}</p>
+    </div>"""
+
+    # ── Data sources ──
+    sources_html=f"""
+    <div style="background:#fff;border-radius:10px;padding:14px 18px;
+                margin-top:22px;box-shadow:0 1px 5px rgba(0,0,0,.08);
+                font-size:12px;color:#555">
+      <strong style="font-size:13px;color:#283593">📚 Data Sources & Methodology</strong>
+      <ul style="margin:10px 0 0 18px;line-height:2">
+        <li><b>Price / OHLCV data:</b> Yahoo Finance via yfinance library
+            — 6-month daily bars, regular market close only (after-hours excluded)</li>
+        <li><b>Volume spike:</b> Today's volume vs 6-month average
+            — threshold ≥{VOL_THRESHOLD:.0f}× for green signal</li>
+        <li><b>Breakout candle:</b> Close &gt; Open × {BRK_THRESHOLD:.2f}
+            (i.e. +{(BRK_THRESHOLD-1)*100:.0f}% intraday gain)</li>
+        <li><b>200-Day MA:</b> Rolling {MA_PERIOD}-day mean of closing prices
+            — calculated locally from downloaded data</li>
+        <li><b>Money Flow Index (MFI):</b> Calculated locally using
+            {MFI_PERIOD}-period standard formula (no external API)</li>
+        <li><b>Institutional ownership:</b> Yahoo Finance
+            heldPercentInstitutions — fetched for top-10 candidates only</li>
+        <li><b>Implied Volatility (IV):</b> Average IV of nearest-expiry
+            call options via Yahoo Finance — top-10 candidates only</li>
+        <li><b>Sector rotation:</b> Daily % change of sector ETFs
+            (XLK, XLV, XLF, XLI, XLE, XLY, XLP, XLB, XLRE, XLU, XLC)</li>
+        <li><b>Historical breakout:</b> Looks back 90 days for prior
+            similar breakout, measures {FWD_DAYS}-day forward return</li>
+        <li><b>Market cap filter:</b> ≥ ${MCAP_MIN/1e9:.0f}B
+            (large-cap only — data from Yahoo Finance info)</li>
+        <li><b>AI supervision:</b> Claude claude-haiku-4-5-20251001 via Anthropic API
+            — validates picks against sector context (requires API key)</li>
+        <li><b>Universe:</b> {n_universe} large-cap US stocks
+            defined in config/universe.csv</li>
+        <li><b>Scoring weights:</b>
+            Inst.Own(3) · Sector(3) · Volume(2) · Breakout(2) ·
+            MA200(2) · MFI(2) · History(2) · IV(1) = {MAX_SCORE}pts max</li>
+        <li><b>Run time:</b> {run_time} UTC — Market phase: {market_phase}</li>
+      </ul>
+    </div>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Stock Breakout Screener</title>
+  <meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate">
+  <title>Stock Breakout Screener — {run_time}</title>
   <style>
     *{{box-sizing:border-box;margin:0;padding:0}}
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;
@@ -536,9 +585,8 @@ def build_html(results, sector_data, run_time, n_universe,
 
 <div class="hdr">
   <h1>📈 Stock Breakout Screener</h1>
-  <p>Updated: {run_time} UTC &nbsp;·&nbsp;
-     {n_universe} stocks screened &nbsp;·&nbsp;
-     Top {TOP_N} by full conviction score</p>
+  <p>Updated: {run_time} UTC &nbsp;·&nbsp; Phase: {market_phase} &nbsp;·&nbsp;
+     {n_universe} stocks screened &nbsp;·&nbsp; Top {TOP_N} by conviction score</p>
 </div>
 
 <div class="card">
@@ -557,6 +605,8 @@ def build_html(results, sector_data, run_time, n_universe,
 
 <h2>🏆 Top {TOP_N} Conviction Picks</h2>
 {top_cards}
+
+{llm_html}
 
 <h2>📊 Full Conviction Dashboard</h2>
 <div style="overflow-x:auto">
@@ -597,53 +647,62 @@ def build_html(results, sector_data, run_time, n_universe,
   </div>
 </div>
 
+{sources_html}
+
 <div class="note">
-  ⚠️ For informational purposes only — not financial advice.<br>
-  Weights: Inst.Ownership(3) · Sector(3) · Volume(2) · Breakout(2) ·
-  MA200(2) · MFI(2) · History(2) · IV(1)
+  ⚠️ For informational purposes only — not financial advice.
+  All data from Yahoo Finance (free tier). Rankings use regular market close only.
 </div>
 </body>
 </html>"""
+
+# ── Market phase helper ───────────────────────────────────────────────────────
+
+def get_market_phase(utc_hour, utc_minute):
+    """Return human-readable market phase based on UTC time."""
+    t = utc_hour * 60 + utc_minute
+    # ET = UTC - 4 (EDT summer)
+    et = t - 240
+    if et < 0: et += 1440
+    if   et <  570: return "Pre-Market (before 9:30 AM ET)"
+    elif et <  960: return "Regular Market Hours"
+    elif et < 1200: return "After-Hours (4:00–8:00 PM ET)"
+    else:           return "Overnight"
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     t0       = datetime.now(timezone.utc).replace(tzinfo=None)
     run_time = t0.strftime("%Y-%m-%d %H:%M")
-    print(f"[{run_time}] Stock screener starting...")
+    phase    = get_market_phase(t0.hour, t0.minute)
+    print(f"[{run_time}] Stock screener — {phase}")
 
     symbols = pd.read_csv(UNIVERSE_FILE)["Symbol"].dropna().tolist()
     print(f"  Universe: {len(symbols)} tickers")
 
-    # ── BATCH 1: Sector rotation ──
-    sector_data    = batch_sector()
-    sorted_sectors = sorted(sector_data.items(), key=lambda x: x[1], reverse=True)
-    sector_rank    = {s: i+1 for i,(s,_) in enumerate(sorted_sectors)}
+    # ── Batch 1: Sector ──
+    sector_data   = batch_sector()
+    sorted_sectors = sorted(sector_data.items(), key=lambda x:x[1], reverse=True)
+    sector_rank   = {s:i+1 for i,(s,_) in enumerate(sorted_sectors)}
 
-    # ── BATCH 2: All price data ──
-    price_data  = batch_price(symbols)
-    valid_syms  = list(price_data.keys())
+    # ── Batch 2: Prices ──
+    price_data = batch_price(symbols)
+    valid_syms = list(price_data.keys())
 
-    # ── BATCH 3: Inst. ownership for ALL valid symbols ──
-    # This is the key fix: same data for all stocks = consistent ranking
-    inst_map = batch_inst_ownership(valid_syms)
-
-    # ── SCORE every stock with complete data ──
-    print(f"  [4/4] Scoring {len(valid_syms)} stocks...", flush=True)
+    # ── Score all stocks (no API calls) ──
+    print(f"  [3/3] Scoring {len(valid_syms)} stocks...", flush=True)
     all_results = []
 
     for sym in valid_syms:
         try:
-            data    = price_data[sym]
-            inst_pct = inst_map.get(sym)
-
-            close   = float(data["Close"].squeeze().iloc[-1])
-            open_   = float(data["Open"].squeeze().iloc[-1])
-            vol     = float(data["Volume"].squeeze().iloc[-1])
-            avg_vol = float(data["Volume"].squeeze().mean())
-
-            vol_ratio = round(vol/avg_vol, 2) if avg_vol > 0 else 0.0
-            breakout  = close > open_ * BRK_THRESHOLD
+            data      = price_data[sym]
+            bar       = get_regular_close_bar(data)  # ← locked to regular close
+            close     = float(bar["Close"])
+            open_     = float(bar["Open"])
+            vol       = float(bar["Volume"])
+            avg_vol   = float(data["Volume"].squeeze().mean())
+            vol_ratio = round(vol/avg_vol, 2) if avg_vol>0 else 0.0
+            breakout  = close > open_*BRK_THRESHOLD
             ma200     = calc_ma200(data)
             above_ma  = close > ma200
             mfi_val   = calc_mfi(data)
@@ -651,83 +710,62 @@ def main():
             sec_rank  = sector_rank.get(sec, 99)
             hist_date, hist_ret = last_breakout(data)
 
-            # Full score — inst_pct included, IV is None (fetched for top-5 only)
             score, factors = score_stock(
                 vol_ratio, breakout, above_ma,
-                inst_pct, mfi_val, sec_rank,
-                None,      # IV — added later for top-5
-                hist_ret
+                None, mfi_val, sec_rank, None, hist_ret
             )
-
             all_results.append({
-                "symbol":    sym,
-                "score":     score,
-                "tl":        traffic_light(score),
-                "factors":   factors,
-                "close":     close,
-                "open":      open_,
-                "vol_ratio": vol_ratio,
-                "ma200":     ma200,
-                "mcap":      None,   # not needed for ranking
-                "inst_pct":  inst_pct,
-                "mfi_val":   mfi_val,
-                "sector":    sec,
-                "iv_val":    None,
-                "hist_date": hist_date,
-                "hist_ret":  hist_ret,
+                "symbol":sym, "score":score, "tl":traffic_light(score),
+                "factors":factors, "close":close, "open":open_,
+                "vol_ratio":vol_ratio, "ma200":ma200, "mcap":None,
+                "inst_pct":None, "mfi_val":mfi_val, "sector":sec,
+                "iv_val":None, "hist_date":hist_date, "hist_ret":hist_ret,
             })
-        except Exception as e:
-            pass   # skip broken tickers silently
-
-    # Sort by full score — ranking is now stable and consistent
-    all_results.sort(key=lambda x: x["score"], reverse=True)
-    top_results = all_results[:TOP_N]
-
-    # ── Add IV + market cap for top-5 only (5 API calls) ──
-    print(f"  Enriching top {len(top_results)} with IV + market cap...")
-    for r in top_results:
-        sym      = r["symbol"]
-        iv       = fetch_iv(sym)
-        try:
-            mcap = safe_float(yf.Ticker(sym).fast_info.market_cap)
         except Exception:
-            mcap = None
+            pass
 
-        r["iv_val"] = iv
-        r["mcap"]   = mcap
+    all_results.sort(key=lambda x:x["score"], reverse=True)
+    top10 = all_results[:10]
 
-        # Re-score to include IV (doesn't change rank — IV weight is only 1pt)
+    # ── Enrich top-10 (10 API calls) ──
+    print("  Enriching top 10...", flush=True)
+    for r in top10:
+        sym = r["symbol"]
+        inst_pct, iv_val, mcap = enrich_candidate(sym)
+        r["inst_pct"]=inst_pct; r["iv_val"]=iv_val; r["mcap"]=mcap
         new_score, new_factors = score_stock(
-            r["vol_ratio"],
-            r["close"] > r["open"] * BRK_THRESHOLD,
-            r["close"] > r["ma200"],
-            r["inst_pct"], r["mfi_val"],
-            sector_rank.get(r["sector"], 99),
-            iv, r["hist_ret"]
+            r["vol_ratio"], r["close"]>r["open"]*BRK_THRESHOLD,
+            r["close"]>r["ma200"], inst_pct, r["mfi_val"],
+            sector_rank.get(r["sector"],99), iv_val, r["hist_ret"]
         )
-        r["score"]   = new_score
-        r["factors"] = new_factors
-        r["tl"]      = traffic_light(new_score)
-        print(f"    {sym}: {new_score}/{MAX_SCORE} "
-              f"inst={r['inst_pct']}% mfi={r['mfi_val']} iv={iv}%")
+        r["score"]=new_score; r["factors"]=new_factors
+        r["tl"]=traffic_light(new_score)
+        print(f"    {sym}: {new_score}/{MAX_SCORE} inst={inst_pct}% iv={iv_val}%")
 
-    # Sentiment across all scored stocks
-    total      = max(len(all_results), 1)
-    green_pct  = sum(1 for r in all_results if r["tl"]=="🟢") / total * 100
-    yellow_pct = sum(1 for r in all_results if r["tl"]=="🟡") / total * 100
-    red_pct    = sum(1 for r in all_results if r["tl"]=="🔴") / total * 100
+    top10.sort(key=lambda x:x["score"], reverse=True)
+    top_results = top10[:TOP_N]
+
+    # ── LLM supervision ──
+    print("  Running LLM supervision...", flush=True)
+    llm_note = llm_supervision(top_results, sector_data)
+    print(f"  LLM: {llm_note[:80]}...")
+
+    # ── Sentiment ──
+    total      = max(len(all_results),1)
+    green_pct  = sum(1 for r in all_results if r["tl"]=="🟢")/total*100
+    yellow_pct = sum(1 for r in all_results if r["tl"]=="🟡")/total*100
+    red_pct    = sum(1 for r in all_results if r["tl"]=="🔴")/total*100
 
     chart_sector(sector_data)
     chart_scores(top_results)
 
     html = build_html(top_results, sector_data, run_time, len(symbols),
-                      green_pct, yellow_pct, red_pct)
-    with open(os.path.join(OUTPUT_DIR, "index.html"), "w") as fh:
+                      green_pct, yellow_pct, red_pct, llm_note, phase)
+    with open(os.path.join(OUTPUT_DIR,"index.html"),"w") as fh:
         fh.write(html)
 
-    elapsed = (datetime.now(timezone.utc).replace(tzinfo=None)-t0).seconds
-    print(f"  Scored {len(all_results)} stocks | top {TOP_N} displayed")
-    print(f"  Total runtime: {elapsed}s ✓")
+    elapsed=(datetime.now(timezone.utc).replace(tzinfo=None)-t0).seconds
+    print(f"  Done: {len(all_results)} scored | top {TOP_N} shown | {elapsed}s ✓")
 
 if __name__ == "__main__":
     main()
